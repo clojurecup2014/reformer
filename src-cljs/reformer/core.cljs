@@ -1,97 +1,185 @@
 (ns reformer.core
   (:require [reagent.core :as reagent :refer [atom]]
+            [json-html.core :refer  [edn->html]]
+            [reagent-forms.core :refer  [bind-fields init-field value-of]]
+            [formative.core :as f]
+            [formative.parse :as fp]
+            [formative.dom :as fd]
             [secretary.core :as secretary
              :include-macros true :refer [defroute]]
             [ajax.core :refer [POST]]))
 
-(def state (atom {:doc {} :saved? false}))
+(enable-console-print!)
 
-(defn set-value! [id value]
-  (swap! state assoc :saved? false)
-  (swap! state assoc-in [:doc id] value))
+(def form-template (atom nil))
+(def doc (atom {:person {:first-name "John"
+                         :age 35
+                         :email "foo@bar.baz"}
+                :weight 100
+                :height 200
+                :bmi 0.5
+                :comments "some interesting comments\non this subject"
+                :radioselection :b
+                :position [:left :right]
+                :pick-one :bar
+                :unique {:position :middle}
+                :pick-a-few [:bar :baz]
+                :many {:options :bar}}))
 
-(defn get-value [id]
-  (get-in @state [:doc id]))
+(defn bind-fields-template [template]
+  [bind-fields
+   template
+   doc
+   (fn [[id] value {:keys [weight-lb weight-kg] :as document}]
+     (cond 
+       (= id :weight-lb)
+       (assoc document :weight-kg (/ value 2.2046))
+       (= id :weight-kg)
+       (assoc document :weight-lb (* value 2.2046))
+       :else nil))
+   (fn [[id] value {:keys [height weight] :as document}]
+     (when (and (some #{id} [:height :weight]) weight height)
+       (assoc document :bmi (/ weight (* height height)))))])
 
-(defn row [label & body]
-  [:div.row
-   [:div.col-md-2 [:span label]]
-   [:div.col-md-3 body]])
+(defn update-template! [f]
+  (swap! form-template 
+         (fn [m]
+           (let [template-updated (f (:template m))
+                 bound-template (bind-fields-template template-updated)]
+             (println "template updated " template-updated)
+             (println "bound updated " bound-template)
+             (assoc m 
+                    :template template-updated
+                    :bound bound-template)))))
 
-(defn text-input [id label]
-  [row label
-   [:input {:type "text"
-            :class "form-control"
-            :value (or (get-value id) "default name")
-            :on-change #(set-value! id (-> % .-target .-value))}]])
+(defn row [label input]
+  [:div.row {:on-click (fn [e] (update-template! (comp vec drop-last)))}
+   [:div.col-md-2 [:label label]]
+   [:div.col-md-5 input]])
 
-(defn list-item [id k v selections]
-  (letfn [(handle-click! []
-            (swap! selections update-in [k] not)
-            (set-value! id (->> @selections (filter second) (map first))))]
-    [:li {:class (str "list-group-item" (if (k @selections) " active"))
-          :on-click handle-click!}
-     v]))
+(defn radio [label id name value]
+  [:div.radio
+   [:label
+    [:input {:field :radio :id id :name name :value value}]
+    label]])
 
-(defn selection-list [id label & items]
-  (let [selections (->> items (map (fn [[k]] [k false])) (into {}) atom)]
-    (fn []
-      [:div.row
-       [:div.col-md-2 [:span label]]
-       [:div.col-md-5
-        [:div.row
-         (for [[k v] items]
-           [list-item id k v selections])]]])))
+(defn input [label type id]
+  (row label [:input.form-control {:field type :id id}]))
 
-(defn save-doc []
-  (POST (str js/context "/save")
-        {:params (:doc @state)
-         :handler (fn [_] (swap! state assoc :saved? true))}))
+(defn mounted-component [component handler]
+     (with-meta
+       (fn [] component)
+       {:component-did-mount
+        (fn [this]
+          (let [node (reagent.core/dom-node this)]
+            (handler node)))}))
 
-(defn about []
-  [:div "this is the story of reformer... work in progress"])
+(reset! form-template
+        {:bound nil
+         :template [:div 
+                    (input "first name" :text :person.first-name)
+                    [:div.row 
+                     [:div.col-md-2]
+                     [:div.col-md-5
+                      [:div.alert.alert-danger 
+                       {:field :alert :id :errors.first-name}]]]
 
-(defn home []
-  [:div
-   [:div.page-header [:h1 "Reagent Form"]]
-   [text-input :first-name "First name"]
-   [text-input :last-name "Last name"]
-   [selection-list :favorite-drinks "Favorite drinks"
-    [:coffee "Coffee"] [:beer "Beer"] [:crab-juice "Crab juice"]]
-   (if (:saved? @state)
-     [:p "Saved"]
-     [:button {:type "submit"
-               :class "btn btn-default"
-               :onClick save-doc}
-      "Submit"])])
+                    (input "last name" :text :person.last-name)
+                    [:div.row
+                     [:div.col-md-2]
+                     [:div.col-md-5
+                      [:div.alert.alert-success
+                       {:field :alert :id :person.last-name :event empty?}
+                       "last name is empty!"]]]
 
-(defn navbar []
-  [:div.navbar.navbar-inverse.navbar-fixed-top
-   [:div.container
-    [:div.navbar-header
-     [:a.navbar-brand {:href "#/"} "reformer"]]
-    [:div.navbar-collapse.collapse
-     [:ul.nav.navbar-nav
-      [:li {:class (when (= home (:page @state)) "active")}
-       [:a {:on-click #(secretary/dispatch! "#/")} "Home"]]
-      [:li {:class (when (= about (:page @state)) "active")}
-       [:a {:on-click #(secretary/dispatch! "#/about")} "About"]]]]]])
+                    (input "age" :numeric :person.age)
+                    (input "email" :email :person.email)
+                    (row
+                      "comments"
+                      [:textarea.form-control
+                       {:field :textarea :id :comments}])
+
+                    [:hr]
+                    (input "kg" :numeric :weight-kg)
+                    (input "lb" :numeric :weight-lb)
+
+                    [:hr]
+                    [:h3 "BMI Calculator"]
+                    (input "height" :numeric :height)
+                    (input "weight" :numeric :weight)
+                    (row "BMI"
+                         [:input.form-control
+                          {:field :numeric :fmt "%.2f" :id :bmi :disabled true}])
+                    [:hr]
+
+                    (row "isn't data binding lovely?"
+                         [:input {:field :checkbox :id :databinding.lovely}])
+                    [:label
+                     {:field :label
+                      :preamble "The level of awesome: "
+                      :placeholder "N/A"
+                      :id :awesomeness}]
+
+                    [:input {:field :range :min 1 :max 10 :id :awesomeness}]
+
+                    [:h3 "option list"]
+                    [:div.form-group
+                     [:label "pick an option"]
+                     [:select.form-control {:field :list :id :many.options}
+                      [:option {:key :foo} "foo"]
+                      [:option {:key :bar} "bar"]
+                      [:option {:key :baz} "baz"]]]
+
+                    (radio
+                      "Option one is this and that—be sure to include why it's great"
+                      :radioselection :foo :a)
+                    (radio
+                      "Option two can be something else and selecting it will deselect option one"
+                      :radioselection :foo :b)
+
+                    [:h3 "multi-select buttons"]
+                    [:div.btn-group {:field :multi-select :id :every.position}
+                     [:button.btn.btn-default {:key :left} "Left"]
+                     [:button.btn.btn-default {:key :middle} "Middle"]
+                     [:button.btn.btn-default {:key :right} "Right"]]
+
+                    [:h3 "single-select buttons"]
+                    [:div.btn-group {:field :single-select :id :unique.position}
+                     [:button.btn.btn-default {:key :left} "Left"]
+                     [:button.btn.btn-default {:key :middle} "Middle"]
+                     [:button.btn.btn-default {:key :right} "Right"]]
+
+                    [:h3 "single-select list"]
+                    [:div.list-group {:field :single-select :id :pick-one}
+                     [:div.list-group-item {:key :foo} "foo"]
+                     [:div.list-group-item {:key :bar} "bar"]
+                     [:div.list-group-item {:key :baz} "baz"]]
+
+                    [:h3 "multi-select list"]
+                    [:ul.list-group {:field :multi-select :id :pick-a-few}
+                     [:li.list-group-item {:key :foo} "foo"]
+                     [:li.list-group-item {:key :bar} "bar"]
+                     [:li.list-group-item {:key :baz} "baz"]]]})
+
+(update-template! identity)
 
 (defn page []
-  [(:page @state)])
+  (fn []
+    [:div
+     [:div.page-header [:h1 "Sample Form"]]
+     (bind-fields-template (:template @form-template))
+     (:template @form-template)
+     [:button.btn.btn-default
+      {:on-click
+       #(if (empty? (get-in @doc [:person :first-name]))
+          (swap! doc assoc-in [:errors :first-name] "first name is empty"))}
+      "save"]
 
-(secretary/set-config! :prefix "#")
+     [:hr]
+     [:h1 "Document State"]
+     [(mounted-component
+        [:p @doc]
+        #(set! (.-innerHTML %) (edn->html @doc)))]]))
 
-(defroute "/" []
-  (.log js/console "hi!")
-  (swap! state assoc :page home))
-(defroute "/about" [] (swap! state assoc :page about))
 
-(defn init! []
-  (swap! state assoc :page home)
-  (reagent/render-component [navbar] (.getElementById js/document "navbar"))
-  (reagent/render-component [page] (.getElementById js/document "app")))
-
-;;start the app
-(init!)
-
+(reagent/render-component [page] (.getElementById js/document "app"))

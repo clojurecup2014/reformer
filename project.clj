@@ -59,6 +59,7 @@
    [com.datomic/datomic-free "0.9.4899"]
    [datomic-schema "1.1.0"]
    [com.stuartsierra/component "0.2.2"]
+   [json-html "0.2.2"]
    [aprint "0.1.0"]
    [org.clojure/core.match "0.2.2"]
    [org.clojure/core.async "0.1.346.0-17112a-alpha"]
