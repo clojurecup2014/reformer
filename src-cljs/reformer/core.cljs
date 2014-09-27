@@ -1,8 +1,8 @@
 (ns reformer.core
-            (:require [reagent.core :as reagent :refer [atom]]
-                      [secretary.core :as secretary
-                       :include-macros true :refer [defroute]]
-                      [ajax.core :refer [POST]]))
+  (:require [reagent.core :as reagent :refer [atom]]
+            [secretary.core :as secretary
+             :include-macros true :refer [defroute]]
+            [ajax.core :refer [POST]]))
 
 (def state (atom {:doc {} :saved? false}))
 
@@ -22,13 +22,13 @@
   [row label
    [:input {:type "text"
             :class "form-control"
-            :value (get-value id)
+            :value (or (get-value id) "default name")
             :on-change #(set-value! id (-> % .-target .-value))}]])
 
 (defn list-item [id k v selections]
   (letfn [(handle-click! []
-                         (swap! selections update-in [k] not)
-                         (set-value! id (->> @selections (filter second) (map first))))]
+            (swap! selections update-in [k] not)
+            (set-value! id (->> @selections (filter second) (map first))))]
     [:li {:class (str "list-group-item" (if (k @selections) " active"))
           :on-click handle-click!}
      v]))
@@ -83,8 +83,8 @@
 (secretary/set-config! :prefix "#")
 
 (defroute "/" []
-          (.log js/console "hi!")
-          (swap! state assoc :page home))
+  (.log js/console "hi!")
+  (swap! state assoc :page home))
 (defroute "/about" [] (swap! state assoc :page about))
 
 (defn init! []
