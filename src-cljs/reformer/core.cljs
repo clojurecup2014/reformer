@@ -1,185 +1,211 @@
 (ns reformer.core
-  (:require [reagent.core :as reagent :refer [atom]]
-            [json-html.core :refer  [edn->html]]
-            [reagent-forms.core :refer  [bind-fields init-field value-of]]
+  (:require-macros [cljs.core.async.macros :refer [go go-loop alt!]])
+  (:require [json-html.core :refer  [edn->html]]
+            [om.core :as om :include-macros true]
+            [om-tools.core :refer-macros  [defcomponent defcomponentk]]
+            [om-tools.dom :as d :include-macros true]
+            [om-bootstrap.input :as i]
+            [cljs.core.async :as async :refer [<! chan put! sliding-buffer close!]]
+            [goog.events :as events]
+            [cljs.reader :refer [read-string]]
+            [sablono.core :as html :refer-macros  [html]]
             [formative.core :as f]
             [formative.parse :as fp]
             [formative.dom :as fd]
-            [secretary.core :as secretary
-             :include-macros true :refer [defroute]]
+            [secretary.core :as secretary :include-macros true :refer [defroute]]
             [ajax.core :refer [POST]]))
 
 (enable-console-print!)
 
-(def form-template (atom nil))
-(def doc (atom {:person {:first-name "John"
-                         :age 35
-                         :email "foo@bar.baz"}
-                :weight 100
-                :height 200
-                :bmi 0.5
-                :comments "some interesting comments\non this subject"
-                :radioselection :b
-                :position [:left :right]
-                :pick-one :bar
-                :unique {:position :middle}
-                :pick-a-few [:bar :baz]
-                :many {:options :bar}}))
+(def mouse-down-ch
+  (chan (sliding-buffer 1)))
 
-(defn bind-fields-template [template]
-  [bind-fields
-   template
-   doc
-   (fn [[id] value {:keys [weight-lb weight-kg] :as document}]
-     (cond 
-       (= id :weight-lb)
-       (assoc document :weight-kg (/ value 2.2046))
-       (= id :weight-kg)
-       (assoc document :weight-lb (* value 2.2046))
-       :else nil))
-   (fn [[id] value {:keys [height weight] :as document}]
-     (when (and (some #{id} [:height :weight]) weight height)
-       (assoc document :bmi (/ weight (* height height)))))])
+(def mouse-up-ch
+  (chan (sliding-buffer 1)))
 
-(defn update-template! [f]
-  (swap! form-template 
-         (fn [m]
-           (let [template-updated (f (:template m))
-                 bound-template (bind-fields-template template-updated)]
-             (println "template updated " template-updated)
-             (println "bound updated " bound-template)
-             (assoc m 
-                    :template template-updated
-                    :bound bound-template)))))
+(def mouse-move-ch
+  (chan (sliding-buffer 1)))
 
-(defn row [label input]
-  [:div.row {:on-click (fn [e] (update-template! (comp vec drop-last)))}
-   [:div.col-md-2 [:label label]]
-   [:div.col-md-5 input]])
+(js/window.addEventListener  "mousedown" #(put! mouse-down-ch %))
+(js/window.addEventListener  "mouseup" #(put! mouse-up-ch %))
+(js/window.addEventListener  "mousemove" #(put! mouse-move-ch %))
 
-(defn radio [label id name value]
-  [:div.radio
-   [:label
-    [:input {:field :radio :id id :name name :value value}]
-    label]])
+(defn by-id [id]
+  (.getElementById js/document id))
 
-(defn input [label type id]
-  (row label [:input.form-control {:field type :id id}]))
+(defn set-position! [owner cursor]
+  (let [node (om/get-node owner)] 
+    (om/update! cursor :position {:top (.-offsetTop node)
+                                  :left (.-offsetLeft node)})))
 
-(defn mounted-component [component handler]
-     (with-meta
-       (fn [] component)
-       {:component-did-mount
-        (fn [this]
-          (let [node (reagent.core/dom-node this)]
-            (handler node)))}))
+; (defn handle-drag-event [cursor owner evt-type e]
+;   (when (= evt-type :down)
+;     (println "evt down")
+;       (om/set-state! owner :mouse {:pressed true}))
+;   (when (:pressed (om/get-state owner :mouse))
+;     (println "is pressed and " evt-type)
+;     (when (= evt-type :up)
+;     (println "up " evt-type)
+;       (om/set-state! owner [:mouse :pressed] false))
+;     (when (= evt-type :move)
+;       (let [{:keys [offset-top offset-left]} (om/get-state owner :mouse)
+;             node (om/get-node owner)]
+;         ;(println (.-clientY e))
+;         ;(println "target is " (get-id (.-target e)))
+;         (om/update! cursor :position {:top (- (.-clientY e) 
+;                                               (.-offsetTop node))
+;                                       :left (- (.-clientX e) 
+;                                                (.-offsetLeft node))})))))
 
-(reset! form-template
-        {:bound nil
-         :template [:div 
-                    (input "first name" :text :person.first-name)
-                    [:div.row 
-                     [:div.col-md-2]
-                     [:div.col-md-5
-                      [:div.alert.alert-danger 
-                       {:field :alert :id :errors.first-name}]]]
+(defn draggable [cursor owner {:keys [build-fn id comms] :as opts}]
+  (reify
+    om/IInitState
+    (init-state [_]
+      {:mouse-chan (chan (sliding-buffer 1000))
+       :mouse {:offset-top 0 :offset-left 0 :pressed false}})
+    om/IDidUpdate
+    (did-update [_ _ _]
+      (set-position! owner cursor))
+    om/IDidMount
+    (did-mount [_]
+      ;(.addEventListener (om/get-node owner) "dragstart" (fn [e] (println "drag start")))
+      ;(.addEventListener (om/get-node owner) "drag" (fn [e] (println "drag")))
+      (set-position! owner cursor))
+    ; om/IWillMount
+    ; (will-mount [_]
+    ;   (let [_ (println "Tapping " opts)
+    ;         ;mouse-move (async/tap (get-in opts [:comms :mouse-move]) (chan))
+    ;         mouse-move (async/tap (get-in opts [:comms :mouse-move]) (chan))
+    ;         mouse-up (async/tap (get-in opts [:comms :mouse-up]) (chan))]
 
-                    (input "last name" :text :person.last-name)
-                    [:div.row
-                     [:div.col-md-2]
-                     [:div.col-md-5
-                      [:div.alert.alert-success
-                       {:field :alert :id :person.last-name :event empty?}
-                       "last name is empty!"]]]
+    ;     (go (while true 
+    ;           (alt!
+    ;             mouse-move ([e] (handle-drag-event cursor owner :move e))
+    ;             mouse-up ([e] (handle-drag-event cursor owner :up e)))))))
+    ; (will-mount [_]
+    ;   (let [mouse-chan (om/get-state owner :mouse-chan)]
+    ;     (go (while true
+    ;           (let [[evt-type e] (<! mouse-chan)]
+    ;             (handle-drag-event cursor owner evt-type e))))))
+    om/IRenderState
+    (render-state [_ {:keys [mouse-chan]}]
+      (let [cursor-str (str (om/value cursor))
+            value (om/value cursor)]
+        (html 
+          [:div {;:style {:width 1000}
+                 :id id
+                 :key id
+                 :draggable true
+                 ;:on-mouse-over (fn [e] (println "mouse over"))
+                 :on-drag (fn [e] 
+                            (println "Dragging " id))
+                 :on-drag-over (fn [e] 
+                                 (println "drag over " id)
+                                 (.preventDefault e))
+                 :on-drop (fn [e] 
+                            (let [dropped (read-string (.getData (.-dataTransfer e) "text/plain"))]
+                              (println "Dropped data " dropped)
+                              (put! (:form-chan comms) {:from dropped :to value})
+                              (println "Dropped onto " id)))
+                 :on-drag-start (fn [e] 
+                                  (.setData (.-dataTransfer e) "text/plain" cursor-str)
+                                  (println "Drag start " id))
+                 :on-drag-end (fn [e] (println "Drag end " id))
+                 ;:on-mouse-enter (fn [e] (println "Mouse enter " id))
+                 ; :on-mouse-up (fn [e] (println "Mouse up " id))
+                 ; :on-mouse-down (fn [e] (handle-drag-event cursor owner :down e))
+                 }
+           build-fn]
+          
+          ))))) 
 
-                    (input "age" :numeric :person.age)
-                    (input "email" :email :person.email)
-                    (row
-                      "comments"
-                      [:textarea.form-control
-                       {:field :textarea :id :comments}])
+(def state (atom {:components {:c1 {:id :c1 :name "new"}
+                               :c2 {:id :c2 :name "ones"}}
+                  :form {:t1 {:id :t1 :name "hello" :ord 0}
+                         :t2 {:id :t2 :name "shuttup" :ord 1}}}))
 
-                    [:hr]
-                    (input "kg" :numeric :weight-kg)
-                    (input "lb" :numeric :weight-lb)
+(defn update-ords [cursor from to]
+  (om/transact! cursor
+                (fn [m]
+                  (let [from (if (:ord from)
+                               from
+                               (assoc from :ord (inc (apply max (map :ord (vals m))))))
+                        from-ord (:ord from)
+                        to-ord (:ord to)
+                        update-ord (if (<= to-ord from-ord)
+                                     (fn [ord]
+                                       (cond (and (>= ord to-ord)
+                                                  (< ord from-ord)) (inc ord)
+                                             (= ord from-ord) to-ord
+                                             :else ord))             
+                                     (fn [ord]
+                                       (cond (and (<= ord to-ord)
+                                                  (> ord from-ord)) (dec ord)
+                                             (= ord from-ord) to-ord
+                                             :else ord)))
+                        m-with-from (if-not (contains? m (:id from))
+                                      (assoc m (:id from) from)
+                                      m)]
+                    (into {} 
+                          (map 
+                               (fn [[k v]] 
+                                 [k (update-in v [:ord] update-ord)]))
+                          m-with-from)))))
 
-                    [:hr]
-                    [:h3 "BMI Calculator"]
-                    (input "height" :numeric :height)
-                    (input "weight" :numeric :weight)
-                    (row "BMI"
-                         [:input.form-control
-                          {:field :numeric :fmt "%.2f" :id :bmi :disabled true}])
-                    [:hr]
+(defcomponent form-holder [app owner opts]
+  (init-state [_]
+              {:comms {:form-chan (chan)
+                       :child-chan (chan (sliding-buffer 1))}})
+  (will-mount [_]
+              (let [_ (println "Tapping " opts)
+                    form-chan (:form-chan (om/get-state owner :comms))]
+                (go (while true 
+                      (alt!
+                        form-chan ([msg] (println "Form chan action" msg)
+                                   (update-ords app 
+                                                (:from msg)
+                                                (:to msg))))))))
+  (render-state [_ {:keys [comms]}]
+          (html 
+            [:div
+             (map 
+               (fn [[k v]]
+                 (om/build draggable
+                           v
+                           {:opts {:comms (merge (om/get-shared owner :comms)
+                                                 comms)
+                                   :react-key (:name v)
+                                   :id k
+                                   :build-fn (d/form (i/input {:type "text" :addon-before "@" :value (:name v)})
+                                                     (i/input {:type "text" :addon-after ".00"})
+                                                     (i/input {:type "text" :addon-before "$" :addon-after ".00"})) }}))
+               (sort-by (comp :ord val) 
+                        app))])))
 
-                    (row "isn't data binding lovely?"
-                         [:input {:field :checkbox :id :databinding.lovely}])
-                    [:label
-                     {:field :label
-                      :preamble "The level of awesome: "
-                      :placeholder "N/A"
-                      :id :awesomeness}]
+(defcomponent panels [{:keys [components form]} owner opts]
+  (render-state [_ {:keys [comms]}]
+                (html 
+                  [:table
+                   [:tbody
+                    [:tr 
+                     [:td 
+                      (om/build form-holder components opts)
+                      
+                      ]
+                     [:td 
+                      (om/build form-holder form opts)
 
-                    [:input {:field :range :min 1 :max 10 :id :awesomeness}]
-
-                    [:h3 "option list"]
-                    [:div.form-group
-                     [:label "pick an option"]
-                     [:select.form-control {:field :list :id :many.options}
-                      [:option {:key :foo} "foo"]
-                      [:option {:key :bar} "bar"]
-                      [:option {:key :baz} "baz"]]]
-
-                    (radio
-                      "Option one is this and that—be sure to include why it's great"
-                      :radioselection :foo :a)
-                    (radio
-                      "Option two can be something else and selecting it will deselect option one"
-                      :radioselection :foo :b)
-
-                    [:h3 "multi-select buttons"]
-                    [:div.btn-group {:field :multi-select :id :every.position}
-                     [:button.btn.btn-default {:key :left} "Left"]
-                     [:button.btn.btn-default {:key :middle} "Middle"]
-                     [:button.btn.btn-default {:key :right} "Right"]]
-
-                    [:h3 "single-select buttons"]
-                    [:div.btn-group {:field :single-select :id :unique.position}
-                     [:button.btn.btn-default {:key :left} "Left"]
-                     [:button.btn.btn-default {:key :middle} "Middle"]
-                     [:button.btn.btn-default {:key :right} "Right"]]
-
-                    [:h3 "single-select list"]
-                    [:div.list-group {:field :single-select :id :pick-one}
-                     [:div.list-group-item {:key :foo} "foo"]
-                     [:div.list-group-item {:key :bar} "bar"]
-                     [:div.list-group-item {:key :baz} "baz"]]
-
-                    [:h3 "multi-select list"]
-                    [:ul.list-group {:field :multi-select :id :pick-a-few}
-                     [:li.list-group-item {:key :foo} "foo"]
-                     [:li.list-group-item {:key :bar} "bar"]
-                     [:li.list-group-item {:key :baz} "baz"]]]})
-
-(update-template! identity)
-
-(defn page []
-  (fn []
-    [:div
-     [:div.page-header [:h1 "Sample Form"]]
-     (bind-fields-template (:template @form-template))
-     (:template @form-template)
-     [:button.btn.btn-default
-      {:on-click
-       #(if (empty? (get-in @doc [:person :first-name]))
-          (swap! doc assoc-in [:errors :first-name] "first name is empty"))}
-      "save"]
-
-     [:hr]
-     [:h1 "Document State"]
-     [(mounted-component
-        [:p @doc]
-        #(set! (.-innerHTML %) (edn->html @doc)))]]))
+                      ]
+                     ]
+                    
+                    ]
+                   ]
+                  )))
 
 
-(reagent/render-component [page] (.getElementById js/document "app"))
+(om/root panels 
+         state
+         {:target (js/document.getElementById  "app")
+          :shared {:comms {:mouse-down (async/mult mouse-down-ch)
+                           :mouse-up (async/mult mouse-up-ch)
+                           :mouse-move (async/mult mouse-move-ch)}}})
