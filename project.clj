@@ -62,7 +62,7 @@
 
    ;[reagent "0.4.2"]
    ; [reagent-forms  "0.2.3"]
-   [formative  "0.8.8"]
+   ;[formative  "0.8.8"]
    [com.datomic/datomic-free "0.9.4899"]
    [datomic-schema "1.1.0"]
    [com.stuartsierra/component "0.2.2"]
@@ -81,7 +81,7 @@
    [org.clojure/clojurescript "0.0-2342"]
    [environ "1.0.0"]
    [ring-server "0.3.1"]
-   [im.chit/cronj "1.4.2"]]
+   [im.chit/cronj "1.4.2" :exclusions [clj-time]]]
   :repl-options
   {:init-ns reformer.repl}
   :min-lein-version "2.0.0")
