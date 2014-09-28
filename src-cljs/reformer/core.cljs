@@ -22,7 +22,11 @@
 
 (enable-console-print!)
 
-(defn draggable [cursor owner {:keys [build-fn id comms] :as opts}]
+;;;;; USE AT YOUR RISK.
+;;;;; HACKED TOGETHER QUICKLY - didn't have much time for the clojurecup
+;;;;; https://clojurecup.com
+
+(defn draggable [cursor owner {:keys [build-fn id comms accept-drop?] :as opts}]
   (reify
     om/IRenderState
     (render-state [_ {:keys []}]
@@ -39,24 +43,58 @@
                              ;    (println "drag over " id)
                                  (.preventDefault e))
                  :on-drop (fn [e] 
-                            (let [dropped (read-string (.getData (.-dataTransfer e) "text/plain"))]
-                              ;(println "Dropped data " dropped)
-                              ;(println "Dropped onto " id)
-                              ;(println "value  " component-info)
-                              (put! form-chan [:drag-drop {:from dropped :to component-info}])))
+                            (when accept-drop?
+                              (let [dropped (read-string (.getData (.-dataTransfer e) "text/plain"))]
+                                (put! form-chan [:drag-drop {:from dropped :to component-info}]))))
                  :on-drag-start (fn [e] 
-                                  (.setData (.-dataTransfer e) "text/plain" component-info-str)
-                                  #_(println "Drag start " id))
-                 ;:on-drag-end (fn [e] (println "Drag end " id))
-                 }
+                                  (.setData (.-dataTransfer e) "text/plain" component-info-str))}
            build-fn]))))) 
 
-(def countries 
-  ["Afghanistan",
-   "Albania","Algeria","Andorra","Angola","Antigua & Deps","Argentina","Armenia","Australia","Austria","Azerbaijan","Bahamas","Bahrain","Bangladesh","Barbados","Belarus","Belgium","Belize","Benin","Bhutan","Bolivia","Bosnia Herzegovina","Botswana","Brazil","Brunei","Bulgaria","Burkina","Burundi","Cambodia","Cameroon","Canada","Cape Verde","Central African Rep","Chad","Chile","China","Colombia","Comoros","Congo","Congo {Democratic Rep}","Costa Rica","Croatia","Cuba","Cyprus","Czech Republic","Denmark","Djibouti","Dominica","Dominican Republic","East Timor","Ecuador","Egypt","El Salvador","Equatorial Guinea","Eritrea","Estonia","Ethiopia","Fiji","Finland","France","Gabon","Gambia","Georgia","Germany","Ghana","Greece","Grenada","Guatemala","Guinea","Guinea-Bissau","Guyana","Haiti","Honduras","Hungary","Iceland","India","Indonesia","Iran","Iraq","Ireland {Republic}","Israel","Italy","Ivory Coast","Jamaica","Japan","Jordan","Kazakhstan","Kenya","Kiribati","Korea North","Korea South","Kosovo","Kuwait","Kyrgyzstan","Laos","Latvia","Lebanon","Lesotho","Liberia","Libya","Liechtenstein","Lithuania","Luxembourg","Macedonia","Madagascar","Malawi","Malaysia","Maldives","Mali","Malta","Marshall Islands","Mauritania","Mauritius","Mexico","Micronesia","Moldova","Monaco","Mongolia","Montenegro","Morocco","Mozambique","Myanmar, {Burma}","Namibia","Nauru","Nepal","Netherlands","New Zealand","Nicaragua","Niger","Nigeria","Norway","Oman","Pakistan","Palau","Panama","Papua New Guinea","Paraguay","Peru","Philippines","Poland","Portugal","Qatar","Romania","Russian Federation","Rwanda","St Kitts & Nevis","St Lucia","Saint Vincent & the Grenadines","Samoa","San Marino","Sao Tome & Principe","Saudi Arabia","Senegal","Serbia","Seychelles","Sierra Leone","Singapore","Slovakia","Slovenia","Solomon Islands","Somalia","South Africa","South Sudan","Spain","Sri Lanka","Sudan","Suriname","Swaziland","Sweden","Switzerland","Syria","Taiwan","Tajikistan","Tanzania","Thailand","Togo","Tonga","Trinidad & Tobago","Tunisia","Turkey","Turkmenistan","Tuvalu","Uganda","Ukraine","United Arab Emirates","United Kingdom","United States","Uruguay","Uzbekistan","Vanuatu","Vatican City","Venezuela","Vietnam","Yemen","Zambia","Zimbabwe"])
+(def countries ["Afghanistan", "Albania","Algeria","Andorra","Angola","Antigua & Deps",
+                "Argentina","Armenia","Australia","Austria","Azerbaijan","Bahamas","Bahrain",
+                "Bangladesh","Barbados","Belarus","Belgium","Belize","Benin","Bhutan","Bolivia","Bosnia Herzegovina",
+                "Botswana","Brazil","Brunei","Bulgaria","Burkina","Burundi","Cambodia","Cameroon","Canada","Cape Verde",
+                "Central African Rep","Chad","Chile","China","Colombia","Comoros","Congo","Congo {Democratic Rep}",
+                "Costa Rica","Croatia","Cuba","Cyprus","Czech Republic","Denmark","Djibouti","Dominica",
+                "Dominican Republic","East Timor","Ecuador","Egypt","El Salvador","Equatorial Guinea","Eritrea","Estonia",
+                "Ethiopia","Fiji","Finland","France","Gabon","Gambia","Georgia","Germany","Ghana","Greece","Grenada",
+                "Guatemala","Guinea","Guinea-Bissau","Guyana","Haiti","Honduras","Hungary","Iceland","India","Indonesia",
+                "Iran","Iraq","Ireland {Republic}","Israel","Italy","Ivory Coast","Jamaica","Japan","Jordan","Kazakhstan",
+                "Kenya","Kiribati","Korea North","Korea South","Kosovo","Kuwait","Kyrgyzstan","Laos","Latvia","Lebanon",
+                "Lesotho","Liberia","Libya","Liechtenstein","Lithuania","Luxembourg","Macedonia","Madagascar","Malawi",
+                "Malaysia","Maldives","Mali","Malta","Marshall Islands","Mauritania","Mauritius","Mexico","Micronesia",
+                "Moldova","Monaco","Mongolia","Montenegro","Morocco","Mozambique","Myanmar, {Burma}","Namibia","Nauru",
+                "Nepal","Netherlands","New Zealand","Nicaragua","Niger","Nigeria","Norway","Oman","Pakistan","Palau",
+                "Panama","Papua New Guinea","Paraguay","Peru","Philippines","Poland","Portugal","Qatar","Romania",
+                "Russian Federation","Rwanda","St Kitts & Nevis","St Lucia","Saint Vincent & the Grenadines",
+                "Samoa","San Marino","Sao Tome & Principe","Saudi Arabia","Senegal","Serbia","Seychelles",
+                "Sierra Leone","Singapore","Slovakia","Slovenia","Solomon Islands","Somalia","South Africa",
+                "South Sudan","Spain","Sri Lanka","Sudan","Suriname","Swaziland","Sweden","Switzerland","Syria",
+                "Taiwan","Tajikistan","Tanzania","Thailand","Togo","Tonga","Trinidad & Tobago","Tunisia","Turkey",
+                "Turkmenistan","Tuvalu","Uganda","Ukraine","United Arab Emirates","United Kingdom",
+                "United States","Uruguay","Uzbekistan","Vanuatu","Vatican City","Venezuela","Vietnam",
+                "Yemen","Zambia","Zimbabwe"])
 
-(def state (atom {:values {#uuid  "001ec685-b3f7-4780-982d-8487f554445d" ""}
-                  :components {:country {:type "dropdown"
+(def state (atom {:values {#uuid  "001ec685-b3f7-4780-982d-8487f554445d" ""
+                           #uuid "542892c0-40cc-4f2d-b15b-64dea375f4bb" ""}
+                  :components {:first-name {:type "text"
+                                            :bs-type :input
+                                            :name "First Name"
+                                            :label "First Name" 
+                                            :validate-regex #".+"
+                                            :regex #".*"}
+                               :last-name {:type "text"
+                                           :bs-type :input
+                                           :validate-regex #".+"
+                                           :name "Last Name"
+                                           :label "Last Name" 
+                                           :regex #".*"}
+                               :number {:type "text"
+                                        :bs-type :input
+                                        :name "Number"
+                                        :label "Number" 
+                                        :regex #"[0-9]*(\.[0-9]*)?"}
+                               :country {:type "dropdown"
                                          :bs-type :dropdown
                                          :items countries
                                          :name "Country"
@@ -87,26 +125,25 @@
                                                :name "Email Address"
                                                :label "Email Address" 
                                                :validate-regex #"\S+@\S+\.\S+"
-                                               :regex #".*"}
-                               :first-name {:type "text"
-                                            :bs-type :input
-                                            :name "First Name"
-                                            :label "First Name" 
-                                            :validate-regex #".+"
-                                            :regex #".*"}
-                               :last-name {:type "text"
-                                           :bs-type :input
-                                           :validate-regex #".+"
-                                           :name "Last Name"
-                                           :label "Last Name" 
-                                           :regex #".*"}}
+                                               :regex #".*"}}
                   :form {#uuid "53c5f509-775a-4b25-a425-26b5e67f2646" 
                          {:id #uuid "53c5f509-775a-4b25-a425-26b5e67f2646" 
                           :value-key #uuid  "001ec685-b3f7-4780-982d-8487f554445d"
+                          :ord 0
                           :type "text"
                           :bs-type :input
                           :name "First Name"
                           :label "First Name" 
+                          :validate-regex #".+"
+                          :regex #".*"}
+                         #uuid "542892ad-9305-4623-8967-cb8ca92b34ea"
+                         {:id #uuid "542892ad-9305-4623-8967-cb8ca92b34ea"
+                          :value-key #uuid "542892c0-40cc-4f2d-b15b-64dea375f4bb"
+                          :ord 1 
+                          :type "text"
+                          :bs-type :input
+                          :name "Last Name"
+                          :label "Last Name" 
                           :validate-regex #".+"
                           :regex #".*"}}}))
 
@@ -154,6 +191,7 @@
                                                         (put! form-chan [:edit-component {:id id}])
                                                         (om/set-state! owner :cursor-pos nil)
                                                         (doto (om/get-node owner "input") .focus .select))
+                                            :on-blur (fn [e] (om/set-state! owner :cursor-pos nil))
                                             :on-input (fn [e]
                                                         (let [cursor-pos (.. e -target -selectionStart)
                                                               new-value (.. e -target -value)]
@@ -212,7 +250,6 @@
 
 (defn form-chan-controller [app message]
   (let [[action arg] message]
-    ;(prn "Controller " action arg)
     (case action
       :edit-component (om/update! app [:editing] (:id arg)) 
       :update-component (om/update! app [:form (:id arg) (:key arg)] (:value arg)) 
@@ -223,7 +260,7 @@
   (render-state [_ _]
                 (html 
                   [:div 
-                   (d/form {} ; {:class "form-horizontal"}
+                   (d/form {}
                            (map 
                              (fn [[k v]]
                                (let [draggable-cursor {:component-info v :value (get values (:value-key v))}]
@@ -232,6 +269,7 @@
                                            {:react-key (:id v)
                                             :opts {:comms (:comms opts) 
                                                    :id k
+                                                   :accept-drop? true
                                                    :build-fn (om/build bs-component 
                                                                        draggable-cursor
                                                                        {:opts opts})}})))
@@ -254,6 +292,7 @@
                                                       draggable-cursor 
                                                       {:react-key (:name v)
                                                        :opts {:comms (:comms opts) 
+                                                              :accept-drop? false
                                                               :id k
                                                               :build-fn (om/build component-option 
                                                                                   v
@@ -301,7 +340,11 @@
                                       and pass in the edn/json to have the entire form built for you without any coding required.
                                       Unfortunately, I may need something like transit to do the last part properly. In addition, 
                                       future improvements will include editing of validation regexes and 
-                                      implementation of additional controls."))
+                                      implementation of additional controls. "
+                                      "Please " (html [:a {:href "https://clojurecup.com/#/apps/reformer"} " vote for me "])
+                                      "at the clojure cup if you're interested in this idea being developed further. "
+                                      (html [:a {:href "https://twitter.com/ghaz"} 
+                                             "Follow me on twitter."])))
                          (r/well {}
                                  (if-let [selected-component (get form editing)] 
                                    (om/build edit-form-control selected-component {:opts {:comms comms}})))
@@ -311,8 +354,8 @@
                                                (om/build components-selector components {:opts {:comms comms}}))
                                         (g/col {:xs 6 :md 4}
                                                (om/build form-holder app {:opts {:comms comms}})))
-                                 #_(g/row {:class "show-grid"}
-                                        (html [:div (.stringify js/JSON (clj->js (om/value form)))])))]))))
+                                 (g/row {:class "show-grid"}
+                                        (html [:div (str (om/value form))])))]))))
 
 (om/root panels 
          state
