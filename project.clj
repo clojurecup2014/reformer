@@ -58,6 +58,8 @@
    [racehub/om-bootstrap  "0.3.0"]
    [prismatic/om-tools  "0.3.2"]
    [sablono "0.2.22"]
+   [datascript  "0.4.1"]
+
    ;[reagent "0.4.2"]
    ; [reagent-forms  "0.2.3"]
    [formative  "0.8.8"]
