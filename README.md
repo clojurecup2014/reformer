@@ -1,6 +1,6 @@
 # reformer
 
-FIXME
+Reformer is a bootstrap form builder. The idea was to be able to drag and drop a bootstrap form and then either supply the EDN to a library (which I will supply) or drop an advanced compiled js file in to an existing page - no coding required. I hoped to have more form components built by the end of the competition. 
 
 ## Prerequisites
 
